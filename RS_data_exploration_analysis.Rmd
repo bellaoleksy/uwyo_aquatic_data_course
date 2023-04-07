@@ -1,0 +1,298 @@
+---
+title: "RS_data_exploration"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is a tutorial on how to explore and analyse remote sensing (RS) data with R. I've just coded in Rmarkdown the material created by Ghosh and Hijmans 2023. Author: Carolina Barbosa
+
+RS products consist of observations of reflectance data. Reflectance is normally measured for different wavelengths of the electromagnetic spectrum. For example, it can be measured in the near-infrared, red, green, and blue wavelengths. If that is the case, satellite data can be referred to as "multi-spectral" (or hyper-spectral if there are many separate wavelengths).
+
+A single "satellite image" has multiple observations for each pixel, that are stored in separate raster layers. These layers (variables) are referred to as "bands" as they typically represent reflectance values for a particular spectral bandwith, and grid cells are referred to as "pixels".
+
+We're going to use a spatial subset of a Landsat 8 scene collected on June 14, 2017. The subset covers the area between Concord and Stockton, in California, USA.
+
+```{r data}
+dir.create("data", showWarnings = FALSE)
+if (!file.exists("data/rs/samples.rds")) {
+  download.file("https://biogeo.ucdavis.edu/data/rspatial/rs.zip", dest = "data/rs.zip")
+  unzip("data/rs.zip", exdir="data")
+}
+```
+
+## Image properties and exploration
+
+Create SpatRaster objects for single Landsat layers (bands)
+
+```{r package terra and image bands, echo=TRUE}
+library(terra)
+
+# Blue
+b2 <- rast('data/rs/LC08_044034_20170614_B2.tif')
+# Green
+b3 <- rast('data/rs/LC08_044034_20170614_B3.tif')
+# Red
+b4 <- rast('data/rs/LC08_044034_20170614_B4.tif')
+# Near Infrared (NIR)
+b5 <- rast('data/rs/LC08_044034_20170614_B5.tif')
+```
+
+Now let's print the variables to check. You can see the spatial resolution, extent, number of layers, coordinate reference system and more.
+
+```{r exploring data, echo=TRUE}
+b2
+
+# coordinate reference system (CRS)
+crs(b2)
+
+# Number of cells, rows, columns
+ncell(b2)
+dim(b2)
+
+# spatial resolution
+res(b2)
+
+# Number of bands
+nlyr(b2)
+
+# Do the bands have the same extent, number of rows and columns, projection, resolution,and origin?
+compareGeom(b2,b3)
+
+```
+
+Let's create a SpatRaster with multiple layers from the existing SpatRaster (single layer) objects and check the properties of the multi-band image.
+
+```{r exploring data 2, echo=TRUE}
+s <- c(b5, b4, b3)
+s
+
+```
+
+We can also create the multi-layer SpatRaster using the filenames. First let's create a list of raster layers to use.
+
+```{r exploring data 3, echo=TRUE}
+filenames <- paste0('data/rs/LC08_044034_20170614_B', 1:11, ".tif")
+filenames
+
+landsat <- rast(filenames)
+landsat
+
+```
+
+Above we created a SpatRaster with 11 layers. The layers represent reflection intensity in the following wavelengths: Ultra Blue, Blue, Green, Red, Near Infrared (NIR), Shortwave Infrared (SWIR) 1, Shortwave Infrared (SWIR) 2,Panchromatic, Cirrus, Thermal Infrared (TIRS) 1, Thermal Infrared (TIRS) 2.
+
+We can plot individual layers of a multi-spectral image:
+
+```{r exploring data 4, echo=TRUE}
+par(mfrow = c(2,2))
+plot(b2, main = "Blue", col = gray(0:100 / 100))
+plot(b3, main = "Green", col = gray(0:100 / 100))
+plot(b4, main = "Red", col = gray(0:100 / 100))
+plot(b5, main = "NIR", col = gray(0:100 / 100))
+
+```
+
+The legends of the maps created above can range between 0 and 1. Notice the difference in shading and range of legends between the different bands. This is because different surface features reflect the incident solar radiation differently. Each layer represent how much incident solar radiation is reflected for a particular wavelength range. For example, vegetation reflects more energy in NIR than other wavelengths and thus appears brighter. In contrast, water absorbs most of the energy in the NIR wavelength and it appears dark. We do not gain that much information from these grey-scale plots; they are often combined into a "composite" to create more interesting plots.
+
+To make a "true (or natural) color" image, that is, something that looks like a normal photograph (vegetation in green, water blue etc), we need bands in the red, green and blue regions. For this Landsat image, band 4 (red), 3 (green), and 2 (blue) can be used. With plotRGB we can combine them into a single composite image. Note that use of strecth = "lin" (otherwise the image will be pitch-dark).
+
+```{r exploring data 5, echo=TRUE}
+landsatRGB <- c(b4, b3, b2) #RGB
+plotRGB(landsatRGB, stretch = "lin") #The true-color composite reveals much more about the landscape than the earlier gray images.
+
+#False color (NIR + red + green) example -> focus on vegetation (red)
+landsatFCC <- c(b5, b4, b3)
+plotRGB(landsatFCC, stretch="lin")
+```
+
+# Subset, rename bands and spatial subset or crop
+
+You can select specific layers (bands) using subset function, or via indexing. 
+
+```{r analysis, echo=TRUE}
+# select first 3 bands only
+landsatsub1 <- subset(landsat, 1:3)
+# same
+landsatsub2 <- landsat[[1:3]]
+
+# Number of bands in the original and new data
+nlyr(landsat)
+## [1] 11
+nlyr(landsatsub1)
+## [1] 3
+nlyr(landsatsub2)
+## [1] 3
+
+#We won’t use the last four bands in landsat. You can remove those by selecting the ones we want.
+landsat <- subset(landsat, 1:7)
+names(landsat)
+
+#For clarity, it is useful to set the names of the bands
+names(landsat) <- c('ultra-blue', 'blue', 'green', 'red', 'NIR', 'SWIR1', 'SWIR2')
+names(landsat)
+```
+
+Spatial subsetting can be used to limit analysis to a geographic subset of the image. Spatial subsets can be created with the crop function, using a SpatExtent object, or another spatial object from which an Extent can be extracted.
+
+```{r analysis 2, echo=TRUE}
+ext(landsat)
+## SpatExtent : 594090, 639000, 4190190, 4227540 (xmin, xmax, ymin, ymax)
+e <- ext(624387, 635752, 4200047, 4210939)
+# crop landsat by the extent
+landsatcrop <- crop(landsat, e)
+```
+
+# Saving file
+
+```{r saving file, echo=TRUE}
+writeRaster(landsatcrop, filename="cropped-landsat.tif", overwrite=TRUE)
+```
+
+# Extract cell values
+
+The extract function is used to get raster values at the locations of other spatial data. You can use points, lines, polygons or an Extent (rectangle) object. You can also use cell numbers to extract values. When using points, extract returns the values of a SpatRaster object for the cells in which a set of points fall.
+
+```{r extracting values, echo=TRUE}
+# load the polygons with land use land cover information
+samp <- readRDS('data/rs/lcsamples.rds')
+# generate 50 point samples from the polygons
+set.seed(555)
+ptsamp <- spatSample(samp, 50, 'regular')
+# We use the x-y coordinates to extract the spectral values for the locations
+df <- extract(landsat, ptsamp)
+# To see some of the reflectance values
+head(df)
+```
+
+# Spectral profiles
+
+A plot of the spectrum (all bands) for pixels representing a certain earth surface features (e.g. water) is known as a spectral profile. Such profiles demonstrate the differences in spectral properties of various earth surface features and constitute the basis for image analysis. Spectral values can be extracted from any multispectral data set using extract function. In the below example, we extracted values of Landsat data for the samples. These samples include: cropland, water, fallow, built and open. First we compute the mean reflectance values for each class and each band and then we plot the mean spectra of these features.
+
+```{r spectral profiles, echo=TRUE}
+ms <- aggregate(df[,-1], list(ptsamp$class), mean)
+# instead of the first column, we use row names
+rownames(ms) <- ms[,1]
+ms <- ms[,-1]
+ms
+# Create a vector of color for the land cover classes for use in plotting
+mycolor <- c('darkred', 'yellow', 'burlywood', 'cyan', 'blue')
+
+#transform ms from a data.frame to a matrix
+ms <- as.matrix(ms)
+
+# First create an empty plot
+plot(0, ylim=c(0,0.6), xlim = c(1,7), type='n', xlab="Bands", ylab = "Reflectance")
+# add the different classes
+for (i in 1:nrow(ms)){
+lines(ms[i,], type = "l", lwd = 3, lty = 1, col = mycolor[i])
+}
+# Title
+title(main="Spectral Signatures", font.main = 2)
+# Legend
+legend("topleft", rownames(ms),
+cex=0.8, col=mycolor, lty = 1, lwd =3, bty = "n")
+```
+
+We can see that the spectral signatures (profile) shows (dis)similarity in the reflectance of different features on the earth’s surface (or above it). Water shows relatively low reflection in all wavelengths, and built, fallow and open have relatively high reflectance in the longer wavelengts.
+
+## Math operations and stats in RS images
+
+Let's keep working on the same Landsat data
+
+```{r loading RGB and FCC images, echo=TRUE}
+rfiles <- paste0('data/rs/LC08_044034_20170614_B', 1:11, ".tif")
+landsat <- rast(rfiles)
+landsatRGB <- landsat[[c(4,3,2)]]
+landsatFCC <- landsat[[c(5,4,3)]]
+```
+
+# Vegetation indices
+
+In the first example we write a custom math function to calculate the Normalized Difference Vegetation Index (NDVI).Let’s define a general function for a ratio based (vegetation) index. In the function below, img is a muti-layer SpatRaster object and i and k are the indices of the layers (layer numbers) used to compute the vegetation index.You will be able to see the variation in greenness from the plot.
+
+```{r veg indices, echo=TRUE}
+vi <- function(img, k, i) {
+bk <- img[[k]]
+bi <- img[[i]]
+vi <- (bk - bi) / (bk + bi)
+return(vi)
+}
+
+# For Landsat NIR = 5, red = 4.
+ndvi <- vi(landsat, 5, 4)
+plot(ndvi, col=rev(terrain.colors(10)), main = "NDVI")
+```
+
+# Histogram and thresholding
+
+We can explore the distribution of values contained within our raster using hist to produces a histogram. Histograms are often useful in identifying outliers and bad data values in our raster data.
+
+```{r histogram, echo=TRUE}
+hist(ndvi, main = "NDVI values", xlab = "NDVI", ylab= "Frequency",
+col = "wheat", xlim = c(-0.5, 1), breaks = 30, xaxt = "n")
+## Warning: [hist] a sample of54% of the cells was used
+
+axis(side=1, at = seq(-0.6, 1, 0.2), labels = seq(-0.6, 1, 0.2))
+```
+
+We can apply basic rules to get an estimate of spatial extent of different Earth surface features. Note that NDVI values are standardized and ranges between -1 to +1. Higher values indicate more green cover. Cells with NDVI values greater than 0.4 are definitely vegetation. The following operation masks all cells that are perhaps not vegetation (NDVI < 0.4).
+
+```{r thresholding, echo=TRUE}
+veg <- clamp(ndvi, 0.4, values=FALSE)
+plot(veg, main='Vegetation')
+```
+
+We can also create classes for different intensity of vegetation.
+
+```{r thresholding 2, echo=TRUE}
+m <- c(-1,0.25, 0.3, 0.4, 0.5, 1)
+vegc <- classify(ndvi, m)
+plot(vegc, col = rev(terrain.colors(4)), main = 'NDVI based thresholding')
+```
+
+## Principal component analysis (PCA)
+
+Multi-spectral data are sometimes transformed to helps to reduce the dimensionality and noise in the data. The principal components transform is a generic data reduction method that can be used to create a few uncorrelated bands from a larger set of correlated bands.
+You can calculate the same number of principal components as the number of input bands. The first principal component (PC) explains the largest percentage of variance and other PCs explain additional the variance in decreasing order.
+
+```{r pca, echo=TRUE}
+set.seed(1)
+sr <- spatSample(landsat, 10000)
+plot(sr[,c(4,5)], main = "NIR-Red plot")
+
+#This is known as vegetation and soil-line plot
+pca <- prcomp(sr, scale = TRUE)
+pca
+screeplot(pca)
+```
+
+Let´s use a function to restrict prediction to the first two principal components
+```{r pca 2, echo=TRUE}
+pca_predict2 <- function(model, data, ...) {
+predict(model, data, ...)[,1:2]
+}
+pci <- predict(landsat, pca, fun=pca_predict2)
+plot(pci)
+```
+
+The first principal component highlights the boundaries between different land use classes. it is difficult to understand what the second principal component is highlighting. Lets try thresholding again and plot the results:
+
+```{r pca 3, echo=TRUE}
+# quick look at the histogram of second component
+hist <- pci[[2]]
+m <- c(-Inf,-3,NA, -3,-2,0, -2,-1,1, -1,0,2, 0,1,3, 1,2,4, 2,6,5, 6,Inf,NA)
+rcl <- matrix(m, ncol = 3, byrow = TRUE)
+rcl
+
+pcClass <- classify(pci[[2]], rcl)
+
+#plotting
+par(mfrow=c(1,2))
+plotRGB(landsatFCC, stretch = "lin", main="False Color", mar=c(3.1, 3.1, 2.1, 2.1))
+plot(pcClass, main="PCA")
+```
