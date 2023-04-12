@@ -1,6 +1,6 @@
 install.packages('neonUtilities')
 library(neonUtilities)
-library(dplyr)
+library(tidyverse)
 ###dpID=data product ID, gray oval below link###
 
 ###end date defaults to all dates with available data##
@@ -223,6 +223,9 @@ library(lmerTest)
 library(scales)
 library(lsmeans)
 library(scales)
+
+NEON_aquatic_ecol_grad_db <- read_csv("Data/NEON/NEON_aquatic_ecol_grad_db.csv")
+
 P<-ggplot(data = NEON_aquatic_ecol_grad_db, aes(x = log(chlorophylla_g_m2), y= log(INV_DEN)   , color =Site)) +
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
         panel.background = element_blank(), axis.line = element_line(colour = "black", size=1))+
