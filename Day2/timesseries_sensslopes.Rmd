@@ -50,9 +50,12 @@ str(mohonkwx)
 #Luckily R seems to recoginize my date as a date already, sweet!
 
 head(mohonkwx)
+names(mohonkwx)
 
 min(mohonkwx$Date)
 max(mohonkwx$Date)
+
+
 ```
 
 Let's take a look at the data
@@ -89,7 +92,7 @@ Does it look like there's a trend in any of these variables? We can overplot a l
 p + geom_smooth(method="lm", color="black")
 ```
 
-It's a little hard to tell with the daily estimates. What if we summarize by water_year-season?
+It's a little hard to tell with the daily estimates. What if we summarize by water_year & season?
 
 ```{r}
 
@@ -164,7 +167,7 @@ Linear regression (OLS) would suggest that there is a trend in both variables. B
 
 ## Mann-Kendall test
 
-We can turn to the Mann-Kendall trend test, which is non-parametric, not requiring a normal distribution. This only tells us if there is a significant **trend**, not the estimated slope.
+We can turn to the Mann-Kendall trend test, which is non-parametric, not requiring a normal distribution. This tells us if there is a significant **trend in the time series**, but not the estimated slope.
 
 ### Cumulative fall ppt.
 
@@ -172,7 +175,7 @@ We can turn to the Mann-Kendall trend test, which is non-parametric, not requiri
 
 #Mann-Kendall test
 mk1 <-trend::mk.test(fall_ppt$cumul_value)
-mk1 #This tells us the trend is significant, but not the slope or intercept.
+mk1 #This tells us the trend is not significant
 
 #You can use broom::glance to put the model output into a tidy format
 mk1_df <- glance(mk1) 
@@ -230,7 +233,7 @@ glance(sens3)
 slopeEst <-as.numeric(sens3[[1]]) # slope estimate
 ```
 
-**QUESTION:** How many degrees C per decade are maximum summer temperatures increasing?
+**QUESTION:** What is the decadal rate of increase in summer max. air temperature? About how much has the max. summer air temperature changed since 1930?
 
 ```{r}
 # the trend package only gives us slope, not a y-int estimate for plotting

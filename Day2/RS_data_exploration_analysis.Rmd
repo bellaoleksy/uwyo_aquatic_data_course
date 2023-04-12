@@ -33,13 +33,13 @@ Create SpatRaster objects for single Landsat layers (bands)
 library(terra)
 
 # Blue
-b2 <- rast('data/rs/LC08_044034_20170614_B2.tif')
+b2 <- rast('Data/data/rs/LC08_044034_20170614_B2.tif')
 # Green
-b3 <- rast('data/rs/LC08_044034_20170614_B3.tif')
+b3 <- rast('Data/data/rs/LC08_044034_20170614_B3.tif')
 # Red
-b4 <- rast('data/rs/LC08_044034_20170614_B4.tif')
+b4 <- rast('Data/data/rs/LC08_044034_20170614_B4.tif')
 # Near Infrared (NIR)
-b5 <- rast('data/rs/LC08_044034_20170614_B5.tif')
+b5 <- rast('Data/data/rs/LC08_044034_20170614_B5.tif')
 ```
 
 Now let's print the variables to check. You can see the spatial resolution, extent, number of layers, coordinate reference system and more.
@@ -76,7 +76,7 @@ s
 We can also create the multi-layer SpatRaster using the filenames. First let's create a list of raster layers to use.
 
 ```{r exploring data 3, echo=TRUE}
-filenames <- paste0('data/rs/LC08_044034_20170614_B', 1:11, ".tif")
+filenames <- paste0('Data/data/rs/LC08_044034_20170614_B', 1:11, ".tif")
 filenames
 
 landsat <- rast(filenames)
@@ -159,7 +159,7 @@ The extract function is used to get raster values at the locations of other spat
 
 ```{r extracting values, echo=TRUE}
 # load the polygons with land use land cover information
-samp <- readRDS('data/rs/lcsamples.rds')
+samp <- readRDS('Data/data/rs/lcsamples.rds')
 # generate 50 point samples from the polygons
 set.seed(555)
 ptsamp <- spatSample(samp, 50, 'regular')
