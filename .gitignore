@@ -41,3 +41,16 @@ vignettes/*.pdf
 */For_instructors
 
 */data
+
+*.DS_Store
+
+#Our powerpoint files are too big methinks
+*.pptx
+
+#Ignore data folder
+*/Data
+
+#Ignore google files
+*.gjam
+*.gdoc
+*.gsheet
