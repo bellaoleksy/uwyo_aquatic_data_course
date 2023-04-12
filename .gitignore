@@ -54,3 +54,6 @@ vignettes/*.pdf
 *.gjam
 *.gdoc
 *.gsheet
+
+*/Day1/powerpoints
+*/Day2/powerpoints
