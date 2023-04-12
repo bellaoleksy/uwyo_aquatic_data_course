@@ -69,7 +69,7 @@ mohonkwx %>%
   facet_wrap(~variable, scales="free", nrow=3)
 ```
 
-Wow, that sure is a lot of data. Let's break it up look by season. 
+Wow, that sure is a lot of data. Let's break it up look by season.
 
 ```{r}
 p <- mohonkwx %>%
@@ -378,12 +378,11 @@ Intuitively, the first derivative tells us how quickly a function is increasing 
 
 ![Image credit: <https://wethestudy.com/mathematics/the-first-derivative-differential-calculus/>](~/Library/CloudStorage/GoogleDrive-bellaoleksy@gmail.com/My%20Drive/Collaborations/uwyo_aquatic_data_course/Data/Time%20Series/first_derivatives.jpg)
 
-
 ## Identifying & plotting "periods of change"
 
-I learned this from GAM-guru Gavin Simpson and will walk you through how you can go about doing this with our climate dataset. [https://www.fromthebottomoftheheap.net/2014/05/15/identifying-periods-of-change-with-gams/]
+I learned this from GAM-guru Gavin Simpson and will walk you through how you can go about doing this with our climate dataset. [<https://www.fromthebottomoftheheap.net/2014/05/15/identifying-periods-of-change-with-gams/>]
 
-First we need to load in some custom functions that Gavin wrote. Some of these are available in the gratia package, but TBH they are a little buggy, so let's do it manually rather than relying on the package. 
+First we need to load in some custom functions that Gavin wrote. Some of these are available in the gratia package, but TBH they are a little buggy, so let's do it manually rather than relying on the package.
 
 ```{r}
 Deriv <- function(mod,
@@ -597,9 +596,9 @@ m1.dsig <- signifD(summerPred$fit,
 plot.Deriv(m1.d)
 ```
 
-To interpret these first derivative plots-- if the confidence intervals DO NOT overlap 0, it means that the trend is either increasing or decreasing. 
+To interpret these first derivative plots-- if the confidence intervals DO NOT overlap 0, it means that the trend is either increasing or decreasing.
 
-Here we find that in the early part of the record, there is no trend in maximum summer temperatures but in the mid-1950s you see the trend increasing to present day. 
+Here we find that in the early part of the record, there is no trend in maximum summer temperatures but in the mid-1950s you see the trend increasing to present day.
 
 We can also visualize it with the fitted trends:
 
