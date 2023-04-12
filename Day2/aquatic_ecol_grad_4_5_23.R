@@ -233,4 +233,4 @@ P<-ggplot(data = NEON_aquatic_ecol_grad_db, aes(x = log(chlorophylla_g_m2), y= l
   geom_point(size=1.52, shape = 21,aes(fill=Site),colour="black")+
   #geom_point(data = den.tab, size = 4)+
   geom_smooth(method = 'lm',formula = y ~ x,size = 1,alpha = 0.3,se=TRUE)+
-  P+facet_wrap(~Domain)###play around with facet wrap to explore data patterns
+  P+facet_wrap(~Site)###play around with facet wrap to explore data patterns
