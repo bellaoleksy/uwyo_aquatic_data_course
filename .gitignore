@@ -49,6 +49,7 @@ vignettes/*.pdf
 
 #Ignore data folder
 */Data
+*/Notes
 
 #Ignore google files
 *.gjam
