@@ -1,0 +1,643 @@
+---
+title: "Timeseries basics - Sens slope"
+author: "Bella Oleksy"
+date: "2023-04-10"
+output: html_document
+---
+
+# Theil-Sens slope
+
+-   In non-parametric statistics, the Theil--Sen estimator is a method for robustly fitting a line to sample points in the plane (simple linear regression) by choosing the median of the slopes of all lines through pairs of points.
+-   Other names you might see it referred to: Sen's slope estimator, slope selection, the single median method, the Kendall robust line-fit method, and the Kendall--Theil robust line.
+-   It is named after Henri Theil and Pranab K. Sen, who published papers on this method in 1950 and 1968 respectively, and after Maurice Kendall because of its relation to the Kendall tau rank correlation coefficient.
+
+For time series analysis, it's often innapropriate to use OLS rgression. Theil-Sens slope estimator can be computed efficiently, and is **insensitive** **to outliers**. It can be significantly more accurate than non-robust simple linear regression (ordinary least squares) for skewed and heteroskedastic data, and competes well against least squares even for normally distributed data in terms of statistical power. It has been called "the most popular nonparametric technique for estimating a linear trend".
+
+# Load in packages
+
+```{r}
+if(!require(tidyverse)){install.packages("tidyverse")} 
+if(!require(patchwork)){install.packages("patchwork")} 
+if(!require(patchwork)){install.packages("patchwork")} 
+if(!require(trend)){install.packages("trend")} 
+if(!require(zip)){install.packages("zip")} 
+if(!require(Kendall)){install.packages("Kendall")} 
+if(!require(broom)){install.packages("broom")} 
+if(!require(mgcv)){install.packages("mgcv")} 
+if(!require(gratia)){install.packages("gratia")} 
+
+library(tidyverse)
+library(patchwork)
+library(ggpubr) #prettier ggplot2 graphs
+library(trend)
+library(zip)
+library(Kendall)
+library(broom) #glance function
+library(mgcv) #gamm function
+library(gratia) #plotting, first derivatives, etc
+```
+
+# Mohonk Lake - climate trend example
+
+Here we are going to a climate dataset from a small mountaintop lake in upstate New York: Mohonk lake.
+
+```{r}
+mohonkwx <- read_csv("Data/Time Series/MohonkDailyWeather.csv") %>%
+  filter(water_year>=1930) # Models we are dealing with can't accomodate missing data
+
+# check out the dataset
+str(mohonkwx)
+#Luckily R seems to recoginize my date as a date already, sweet!
+
+head(mohonkwx)
+
+min(mohonkwx$Date)
+max(mohonkwx$Date)
+```
+
+Let's take a look at the data
+
+```{r}
+
+mohonkwx %>%
+  pivot_longer(c(Precip_mm,TempMax_degC,TempMean_degC),
+               #pick three climate/weather variables
+               names_to = "variable", values_to="value") %>%
+               #wide to long format for graphing
+  ggplot(aes(x=Date, y=value))+
+  geom_point(shape=21, fill="grey50", alpha=0.5)+
+  facet_wrap(~variable, scales="free", nrow=3)
+```
+
+Wow, that sure is a lot of data. Let's break it up look by season. 
+
+```{r}
+p <- mohonkwx %>%
+  pivot_longer(c(Precip_mm,TempMax_degC,TempMean_degC),
+               #pick three climate/weather variables
+               names_to = "variable", values_to="value") %>%
+               #wide to long format for graphing
+  ggplot(aes(x=Year, y=value, group=variable, fill=season))+
+  geom_point(shape=21, alpha=0.5)+
+  facet_grid(variable~season, scales="free")
+p
+```
+
+Does it look like there's a trend in any of these variables? We can overplot a linear fit to aid the eye on our data exploration journey.
+
+```{r}
+p + geom_smooth(method="lm", color="black")
+```
+
+It's a little hard to tell with the daily estimates. What if we summarize by water_year-season?
+
+```{r}
+
+mohonkSeasonal <- mohonkwx %>%
+  pivot_longer(c(Precip_mm,TempMax_degC,TempMean_degC),
+               #pick three climate/weather variables
+               names_to = "variable", values_to="value") %>%
+               #wide to long format for graphing
+  group_by(water_year, season, variable) %>%
+  summarize(mean_value=mean(value, na.rm=TRUE))
+
+
+mohonkSeasonal %>%
+  ggplot(aes(x=water_year, y=mean_value, group=variable, fill=season))+
+  geom_point(shape=21, alpha=0.5)+
+  facet_grid(variable~season, scales="free") +
+  geom_smooth(method="lm", color="black")
+
+```
+
+Thoughts on this graph? Is there some other way we could summarize the precipitation data?
+
+```{r}
+mohonkSeasonal_ppt <- mohonkwx %>%
+  pivot_longer(c(Precip_mm),
+               #pick three climate/weather variables
+               names_to = "variable", values_to="value") %>%
+               #wide to long format for graphing
+  group_by(water_year, season, variable) %>%
+  summarize(cumul_value=sum(value, na.rm=TRUE))
+
+mohonkSeasonal_ppt %>%
+  ggplot(aes(x=water_year, y=cumul_value, group=variable, fill=season))+
+  geom_point(shape=21, alpha=0.5)+
+  facet_grid(variable~season, scales="free") +
+  geom_smooth(method="lm", color="black")
+
+
+```
+
+We *could* test some of these trends with a linear model. Let's start with summer max temperature and fall cumulative precipitation.
+
+```{r}
+
+fall_ppt <- mohonkSeasonal_ppt %>%
+  filter(season=="fall" & variable == "Precip_mm")
+
+summer_temp <- mohonkSeasonal %>%
+  filter(season=="summer" & variable == "TempMax_degC")
+
+
+lm1 <- lm(cumul_value ~ water_year, fall_ppt)
+summary(lm1)
+
+lm2 <- lm(mean_value ~ water_year, summer_temp)
+summary(lm2)
+
+
+# test the data for normality
+hist(fall_ppt$cumul_value)
+hist(summer_temp$mean_value)
+#Normal...ish
+
+# but let's use a Shapiro test to check for real
+shapiro.test(fall_ppt$cumul_value)
+shapiro.test(summer_temp$mean_value)
+# p<0.05, so these are not fully normal distributions
+
+```
+
+Linear regression (OLS) would suggest that there is a trend in both variables. But let's try something a bit robust.
+
+## Mann-Kendall test
+
+We can turn to the Mann-Kendall trend test, which is non-parametric, not requiring a normal distribution. This only tells us if there is a significant **trend**, not the estimated slope.
+
+### Cumulative fall ppt.
+
+```{r}
+
+#Mann-Kendall test
+mk1 <-trend::mk.test(fall_ppt$cumul_value)
+mk1 #This tells us the trend is significant, but not the slope or intercept.
+
+#You can use broom::glance to put the model output into a tidy format
+mk1_df <- glance(mk1) 
+View(mk1_df)
+```
+
+For a slope estimate we uses the Sen's slope function from the trend package.
+
+```{r}
+sens1 <-trend::sens.slope(fall_ppt$cumul_value)
+print(sens1)
+glance(sens1)
+
+#Extract slope estimate manually
+slopeEst <-as.numeric(sens1[[1]]) 
+
+# Annoyingly, the trend package only gives us slope, not a y-int estimate for plotting
+# we'll use the zyp package for that
+sens2 <- zyp::zyp.sen(cumul_value ~ water_year, fall_ppt)
+print(sens2) # inspect
+
+yInt <-sens2$coefficients[[1]] # pull out y-int estimate for ploting
+
+# Now let's plot the data with our MK estimate trend, instead of lm one from ggplot
+fall_ppt %>%
+  ggplot(aes(y = cumul_value, x = water_year)) +
+  geom_point(col = "black", fill="grey50", shape=21)+
+  geom_smooth(method = "lm", se = FALSE, color="black") + #Linear model
+  # use info from our MK and Sen's test to graph the trend line
+  geom_abline(intercept = yInt, slope = slopeEst, color="blue") +
+  labs(title="Mohonk Lake summer climate trends",
+       y="Cumulative annual fall precipiation", x="Water Year")
+
+#In this case, slopes and intercepts are pretty similar but you can see how the linear predicts a steeper slope, influences by those high outliers later in the record.
+```
+
+### Summer max. air temperatures
+
+```{r}
+
+#Mann-Kendall test
+mk2 <-trend::mk.test(summer_temp$mean_value)
+mk2 # significant
+
+#This tells us the trend is highly significant, but not the slope or intercept.
+
+#You can use broom::glance to put the model output into a tidy format
+mk2_df <- glance(mk2) 
+
+
+# For a slope estimate we uses the Sen's slope function
+sens3 <-trend::sens.slope(summer_temp$mean_value)
+print(sens3)
+glance(sens3)
+slopeEst <-as.numeric(sens3[[1]]) # slope estimate
+```
+
+**QUESTION:** How many degrees C per decade are maximum summer temperatures increasing?
+
+```{r}
+# the trend package only gives us slope, not a y-int estimate for plotting
+# we'll use the zyp package for that
+sens4 <- zyp::zyp.sen(mean_value ~ water_year, summer_temp)
+print(sens4) # inspect
+sens4$coefficients[[1]] #coefficient (intercept)
+yInt <-sens4$coefficients[[1]] # pull out y-int estimate for ploting
+
+# Now let's plot the data with our MK estimate trend, instead of lm one from ggplot
+summer_temp %>%
+  ggplot(aes(y = mean_value, x = water_year)) +
+  geom_point(col = "black", fill="grey50", shape=21)+
+  geom_smooth(method = "lm", se = FALSE, color="black") + #Linear model
+  # use info from our MK and Sen's test to graph the trend line
+  geom_abline(intercept = yInt, slope = slopeEst, color="blue") +
+  labs(title="Mohonk Lake summer climate trends",
+       y="Maximum summer air temperature", x="Water Year")
+
+#Again, slopes and intercepts are pretty similar between linear model and Sens slope, but not always the case.
+```
+
+# GAMs for non-linear trends
+
+Not all trends are linear, and sometimes you want to understand when a trend is changing, or accelerating.
+
+Generalized Additive Models (GAMs) are a type of regression model that allow for non-linear relationships between the predictor variables and the response variable. In the context of time series analysis, GAMs can offer several benefits:
+
+1.  Non-linearity: Time series data can exhibit complex non-linear relationships between the predictor variables and the response variable. GAMs can model these non-linear relationships without requiring the user to specify a particular functional form.
+
+2.  Flexibility: GAMs are flexible and can accommodate a variety of predictor variables, including continuous, categorical, and binary variables. This makes them useful for time series data that may have a mix of different types of predictors.
+
+3.  Smoothness: GAMs can incorporate smoothness constraints, which can help to identify trends in the data and reduce noise. This can be particularly useful when the time series data has a lot of noise or fluctuations.
+
+4.  Interpretability: GAMs provide a straightforward way to visualize the relationship between the predictor variables and the response variable. This can help to identify important features in the data and provide insights into the underlying mechanisms driving the time series.
+
+5.  Prediction accuracy: GAMs have been shown to be effective at predicting future values of the time series, particularly when there are non-linear relationships between the predictor variables and the response variable.
+
+This primer on GAMs is the broadest of overviews. You could take a semester long course *just* on GAMs. If you want to dig in further, please see this reference: [<https://github.com/noamross/gam-resources>].
+
+Using the same climate dataset from Mohonk Lake, let's say we are interested in whether the trend in temperature or precipitation accelerated at any point in the record.
+
+```{r}
+summer_temp %>%
+  ggplot(aes(y = mean_value, x = water_year)) +
+  geom_point(col = "black", fill="grey50", shape=21)+
+  geom_smooth(method = "gam", se = TRUE, color="black") + #fit a gam
+  labs(y="Maximum summer air temperature", x="Water Year") +
+  theme_pubr() +
+
+fall_ppt %>%
+  ggplot(aes(y = cumul_value, x = water_year)) +
+  geom_point(col = "black", fill="grey50", shape=21)+
+  geom_smooth(method = "gam", se = TRUE, color="black") + #fit a gam
+  labs(y="Cumulative annual fall precipiation", x="Water Year") +
+  theme_pubr()
+```
+
+Just using the default GAM formula in geom_smooth(), it looks as if the trend in summer temperatures is not constant. But let's actually fit a model to the data.
+
+## Basic timeseries formula
+
+For an in-depth explanation of the gam() function, look at the user guide: ??mgcv::gam
+
+```{r}
+gam0 <- gam(
+  mean_value ~  s(water_year, k=4), #formula, where k is the basis dimension
+  data = summer_temp, #dataset 
+  method = "REML" #The smoothing parameter estimation method, REML is default
+)
+summary(gam0)
+
+#From the broom package
+glance(gam0)
+tidy(gam0)
+
+```
+
+## Checking for autocorrelation
+
+Due to the nature of timeseries, data are often autocorrelated, such as when the value at time t is correlated with t-1.
+
+To check for autocorrelation in a GAM time series, we can examine the residuals of the model. Autocorrelation in the residuals indicates that there may be a pattern in the data that the model has not captured, and can lead to biased estimates and incorrect conclusions.
+
+One way to check for autocorrelation in the residuals of a GAM time series is to plot the residuals against the time index and visually inspect the plot for any patterns or trends. A clear pattern in the residuals over time may indicate the presence of autocorrelation.
+
+```{r}
+gamErrors <- data.frame(resid = residuals(gam0), water_year = summer_temp$water_year)
+
+# Plot the residuals against the time index
+gamErrors %>%
+  ggplot(aes(x = water_year, y = resid)) +
+  geom_point() +
+  ggtitle("Residuals vs. Time Index")
+```
+
+Another way to check for autocorrelation in the residuals is to compute the autocorrelation function (ACF) of the residuals using the acf() function in R. Significant autocorrelation at lag k in the ACF plots indicates the presence of autocorrelation in the residuals at that lag.
+
+```{r}
+# Compute and plot the ACF 
+acf_resid <- acf(residuals(gam0), lag.max = 10, plot = TRUE, main = "ACF of Residuals")
+
+
+```
+
+At time lag 0, the correlation will always be 1. Here, we see that the summer maximum air temperature is not significantly correlated with the maximum summer air temperature in the prior year, which logically makes sense. However, if we wanted to account for autocorrelation in our GAM formula, it would look something like this:
+
+```{r}
+gam1 <- gam(
+  mean_value ~  s(water_year, k=4), #formula
+  data = summer_temp, #dataset 
+  correlation = corARMA(form = ~ 1 | year, p = 1), #specify the correlation argument of gam
+  method = "REML" #The smoothing parameter estimation method, REML is default
+)
+summary(gam1)
+```
+
+Going back to our original model, we can use some handy functions from the gratia package model summaries, diagnostics, graphing, etc
+
+## Model diagnostics
+
+```{r}
+
+appraise(gam0)
+
+draw(gam0, residuals = TRUE)
+#Partial plots of estimated smooth functions with partial residuals
+
+
+gam.check(gam0)
+# In some cases, you will want to experiment with your k value, which is the basis dimension. 
+# p>0.05 indicates that k=4 is fine in this case. 
+ 
+```
+
+## First derivatives
+
+Now let's go back to our original question. At any point in the timeseries, is the rate of change in summer max. air temperatures increasing?
+
+To answer that question, reach back into your brain and recall the *first derivative*
+
+The first derivative of a function is a measure of how much the function changes with respect to its input variable. It gives the rate of change or the slope of the function at a given point.
+
+Intuitively, the first derivative tells us how quickly a function is increasing or decreasing at a particular point. If the first derivative is positive, the function is increasing at that point; if it is negative, the function is decreasing. If the first derivative is zero, the function is at a local maximum or minimum.
+
+![Image credit: <https://wethestudy.com/mathematics/the-first-derivative-differential-calculus/>](~/Library/CloudStorage/GoogleDrive-bellaoleksy@gmail.com/My%20Drive/Collaborations/uwyo_aquatic_data_course/Data/Time%20Series/first_derivatives.jpg)
+
+
+## Identifying & plotting "periods of change"
+
+I learned this from GAM-guru Gavin Simpson and will walk you through how you can go about doing this with our climate dataset. [https://www.fromthebottomoftheheap.net/2014/05/15/identifying-periods-of-change-with-gams/]
+
+First we need to load in some custom functions that Gavin wrote. Some of these are available in the gratia package, but TBH they are a little buggy, so let's do it manually rather than relying on the package. 
+
+```{r}
+Deriv <- function(mod,
+                  n = 200,
+                  eps = 1e-7,
+                  newdata,
+                  term) {
+  if (inherits(mod, "gamm"))
+    mod <- mod$gam
+  m.terms <- attr(terms(mod), "term.labels")
+  if (missing(newdata)) {
+    newD <- sapply(model.frame(mod)[, m.terms, drop = FALSE],
+                   function(x)
+                     seq(min(x), max(x), length = n))
+    names(newD) <- m.terms
+  } else {
+    newD <- newdata
+  }
+  X0 <- predict(mod, data.frame(newD), type = "lpmatrix")
+  newD <- newD + eps
+  X1 <- predict(mod, data.frame(newD), type = "lpmatrix")
+  Xp <- (X1 - X0) / eps
+  Xp.r <- NROW(Xp)
+  Xp.c <- NCOL(Xp)
+  ## dims of bs
+  bs.dims <- sapply(mod$smooth, "[[", "bs.dim") - 1
+  ## number of smooth terms
+  t.labs <- attr(mod$terms, "term.labels")
+  ## match the term with the the terms in the model
+  if (!missing(term)) {
+    want <- grep(term, t.labs)
+    if (!identical(length(want), length(term)))
+      stop("One or more 'term's not found in model!")
+    t.labs <- t.labs[want]
+  }
+  nt <- length(t.labs)
+  ## list to hold the derivatives
+  lD <- vector(mode = "list", length = nt)
+  names(lD) <- t.labs
+  for (i in seq_len(nt)) {
+    Xi <- Xp * 0
+    want <- grep(t.labs[i], colnames(X1))
+    Xi[, want] <- Xp[, want]
+    df <- Xi %*% coef(mod)
+    df.sd <- rowSums(Xi %*% mod$Vp * Xi) ^ .5
+    lD[[i]] <- list(deriv = df, se.deriv = df.sd)
+  }
+  class(lD) <- "Deriv"
+  lD$gamModel <- mod
+  lD$eps <- eps
+  lD$eval <- newD - eps
+  lD ##return
+}
+
+confint.Deriv <- function(object, term, alpha = 0.05, ...) {
+  l <- length(object) - 3
+  term.labs <- names(object[seq_len(l)])
+  if (missing(term)) {
+    term <- term.labs
+  } else {
+    ## how many attempts to get this right!?!?
+    ##term <- match(term, term.labs)
+    ##term <- term[match(term, term.labs)]
+    term <- term.labs[match(term, term.labs)]
+  }
+  if (any(miss <- is.na(term)))
+    stop(paste("'term'", term[miss], "not a valid model term."))
+  res <- vector(mode = "list", length = length(term))
+  names(res) <- term
+  residual.df <- df.residual(object$gamModel)
+  tVal <- qt(1 - (alpha / 2), residual.df)
+  ##for(i in term.labs[term]) {
+  for (i in term) {
+    upr <- object[[i]]$deriv + tVal * object[[i]]$se.deriv
+    lwr <- object[[i]]$deriv - tVal * object[[i]]$se.deriv
+    res[[i]] <- list(upper = drop(upr), lower = drop(lwr))
+  }
+  res$alpha = alpha
+  res
+}
+
+signifD <- function(x, d, upper, lower, eval = 0) {
+  miss <- upper > eval & lower < eval
+  incr <- decr <- x
+  want <- d > eval
+  incr[!want | miss] <- NA
+  want <- d < eval
+  decr[!want | miss] <- NA
+  list(incr = incr, decr = decr)
+}
+
+plot.Deriv <- function(x,
+                       alpha = 0.05,
+                       polygon = TRUE,
+                       sizer = FALSE,
+                       term,
+                       eval = 0,
+                       lwd = 3,
+                       col = "lightgrey",
+                       border = col,
+                       ylab,
+                       xlab,
+                       main,
+                       ...) {
+  l <- length(x) - 3
+  ## get terms and check specified (if any) are in model
+  term.labs <- names(x[seq_len(l)])
+  if (missing(term)) {
+    term <- term.labs
+  } else {
+    term <- term.labs[match(term, term.labs)]
+  }
+  if (any(miss <- is.na(term)))
+    stop(paste("'term'", term[miss], "not a valid model term."))
+  if (all(miss))
+    stop("All terms in 'term' not found in model.")
+  l <- sum(!miss)
+  nplt <- n2mfrow(l)
+  tVal <- qt(1 - (alpha / 2), df.residual(x$gamModel))
+  if (missing(ylab))
+    ylab <- expression(italic(hat(f) * "'" * (x)))
+  if (missing(xlab)) {
+    xlab <- attr(terms(x$gamModel), "term.labels")
+    names(xlab) <- xlab
+  }
+  if (missing(main)) {
+    main <- term
+    names(main) <- term
+  }
+  ## compute confidence interval
+  CI <- confint(x, term = term)
+  ## plots
+  layout(matrix(seq_len(l), nrow = nplt[1], ncol = nplt[2]))
+  for (i in term) {
+    upr <- CI[[i]]$upper
+    lwr <- CI[[i]]$lower
+    ylim <- range(upr, lwr)
+    plot(
+      x$eval[, i],
+      x[[i]]$deriv,
+      type = "n",
+      ylim = ylim,
+      ylab = ylab,
+      xlab = xlab[i],
+      main = main[i],
+      ...
+    )
+    if (isTRUE(polygon)) {
+      polygon(c(x$eval[, i], rev(x$eval[, i])),
+              c(upr, rev(lwr)),
+              col = col,
+              border = border)
+    } else {
+      lines(x$eval[, i], upr, lty = "dashed")
+      lines(x$eval[, i], lwr, lty = "dashed")
+    }
+    abline(h = 0, ...)
+    if (isTRUE(sizer)) {
+      lines(x$eval[, i], x[[i]]$deriv, lwd = 1)
+      S <- signifD(x[[i]]$deriv, x[[i]]$deriv, upr, lwr,
+                   eval = eval)
+      lines(x$eval[, i], S$incr, lwd = lwd, col = "blue")
+      lines(x$eval[, i], S$decr, lwd = lwd, col = "red")
+    } else {
+      lines(x$eval[, i], x[[i]]$deriv, lwd = 2)
+    }
+  }
+  layout(1)
+  invisible(x)
+}
+
+```
+
+```{r}
+#Extract years for next step
+years <- with(summer_temp, data.frame(water_year = seq(min(water_year, na.rm=TRUE),
+                                                                                     max(water_year, na.rm=TRUE),
+                                                                                     length.out = 200)))
+
+#Create a dataframe with predicted ("fitted") values from the GAM and year, on the response scale.
+summerPred <- cbind(years,
+                    data.frame(predict(
+                      gam0, years,
+                      type = "response",
+                      se.fit = TRUE
+                    )))
+head(summerPred)
+
+### Calculate upper and lower bounds
+summerPred <- transform(summerPred,
+                        upper = fit + (2 * se.fit),
+                        lower = fit - (2 * se.fit))
+
+head(summerPred)
+
+
+#Extract first derivative of the trend
+Term = "water_year"
+m1.d <- Deriv(gam0) #in theory gratia::derivatives should work here
+
+#Calculate confidence intervals around the first derivative
+m1.dci <- confint(m1.d, term = "water_year")
+
+#Extract periods of increasing or decreasing trends
+m1.dsig <- signifD(summerPred$fit,
+                   d = m1.d[[Term]]$deriv,
+                   m1.dci[[Term]]$upper,
+                   m1.dci[[Term]]$lower)
+
+#Plot the first derivative 
+plot.Deriv(m1.d)
+```
+
+To interpret these first derivative plots-- if the confidence intervals DO NOT overlap 0, it means that the trend is either increasing or decreasing. 
+
+Here we find that in the early part of the record, there is no trend in maximum summer temperatures but in the mid-1950s you see the trend increasing to present day. 
+
+We can also visualize it with the fitted trends:
+
+```{r}
+#Gavin has some code for doing this in base R.
+ylim <- with(summerPred, range(upper, lower, fit))
+ylab <- 'Maximum summer air temperature'
+xlab <- 'Water year'
+plot(fit ~ water_year, data = summerPred, type = "n", ylab = ylab, ylim = ylim, xlab=xlab)
+lines(fit ~ water_year, data = summerPred)
+lines(upper ~ water_year, data = summerPred, lty = "dashed")
+lines(lower ~ water_year, data = summerPred, lty = "dashed")
+lines(unlist(m1.dsig$incr) ~ water_year, data = summerPred, col = "blue", lwd = 3)
+lines(unlist(m1.dsig$decr) ~ water_year, data = summerPred, col = "red", lwd = 3) #Red line doesn't show up because in this case we don't have a decreasing trend
+```
+
+But let's do this in ggplot2 and make it publication worthy!
+
+```{r}
+#Add a column for periods of time when the trend is accelerating
+summerPred <- cbind(summerPred, data.frame(incr=unlist(m1.dsig$incr)))
+
+
+summerPred %>%
+  ggplot(aes(x=water_year,y=fit))+
+  geom_point(data=summer_temp, aes(x=water_year, y=mean_value),
+             shape=21,fill="grey50", alpha=0.5)+ #Plot raw data
+  geom_line(size=1, alpha=0.8)+ #Plot fitted trend
+  geom_line(aes(x=water_year, y=incr), color="red", size=1, alpha=0.8)+ #Highlight period of increasing trend
+  geom_ribbon(aes(ymin = (lower), ymax = (upper), x = water_year), alpha = 0.5, inherit.aes = FALSE) + #Plot CI around fitted trend
+  labs(x="Water year",y="Maximum summer air temperature (ºC)")+
+  coord_cartesian(xlim=c(1930,2020),
+                  ylim=c(22,30))+
+  scale_x_continuous(breaks=seq(1930, 2020, 15))+
+  scale_y_continuous(breaks=seq(22,30,2))+
+  theme_pubr(base_size=8, border=TRUE)
+
+ggsave(plot=last_plot(), "Day2/figures/GAM_example.png",
+       dpi=600, width = 6, height = 5, units = 'in')
+
+```
